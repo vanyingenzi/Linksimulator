@@ -1,7 +1,7 @@
 # LINGI1341-linksim
 A link simulator for the first networking project (LINGI1341)
 
-This program will proxy UDP traffic (datagrams of max 528 bytes), between
+This program will proxy UDP traffic (datagrams of max 1024 bytes), between
 two hosts, simulating the behavior of a lossy link.
 
 Using it is a simple as choosing two UDP ports, one for the proxy, and one for the receiver of the protocol.
