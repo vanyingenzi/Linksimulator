@@ -42,18 +42,18 @@ SOFTWARE.
 
 #include "min_queue.h" /* minq_x */
 
-/* Min packet length in the protocol */
-#define MIN_PKT_LEN 10
-/* Min packet length of a data packet in the protocol */
-#define MIN_PKT_PDATA_LEN 12
-/* Position of the length bit in the header */
+/*
+ * Min packet length in the protocol:
+ * Type(2b)+Window(6b)+Length(13b)+Seqnum(11b) = 4B + Timestamp(4B) + CRC1(4B) = 12B
+ */
+#define MIN_PKT_LEN 12
+/* Position of the Length field in the header (after Type=2b + Window=6b) */
 #define LENGTH_FIELD_LENGTH_BIT_POS 8
 
 /*
- * Max packet length in the protocol (packet with max header size +
- * max payload size + CRC2 size
+ * Max packet length in the protocol (header + max payload + CRC2)
  */
-#define MAX_PKT_LEN (MIN_PKT_LEN + 2 + 512 + 4)
+#define MAX_PKT_LEN (MIN_PKT_LEN + 1024 + 4)
 /* Random number between 0 and 100 */
 #define RAND_PERCENT ((unsigned int)(rand() % 101))
 
@@ -127,7 +127,12 @@ static void timeval_diff(const struct timeval *a,
 
 /* Log an action on a processed packet */
 #define LOG_PKT_FMT(buf, fmt, ...) \
-	fprintf(stderr,"[%s %3hhu] " fmt, ((uint8_t)buf[0] & 0xC0) == 0x00 ? "FEC" : "SEQ" , (((uint8_t)buf[0] & 0xC0) <= 0x40) ? buf[3] : buf[1], ##__VA_ARGS__)
+	fprintf(stderr,"[%s %4u] " fmt, \
+		((uint8_t)buf[0] >> 6) == 1 ? "DATA" : \
+		((uint8_t)buf[0] >> 6) == 2 ? "ACK " : \
+		((uint8_t)buf[0] >> 6) == 3 ? "SACK" : "????", \
+		(unsigned)(((uint8_t)buf[2] & 0x07) << 8) | (uint8_t)buf[3], \
+		##__VA_ARGS__)
 #define LOG_PKT(buf, msg) LOG_PKT_FMT(buf, msg "\n")
 
 /* Send a packet to the host we're proxying */
@@ -187,11 +192,10 @@ static inline int simulate_link(char *buf, int len, int direction)
 		return EXIT_SUCCESS;
 	}
 	/* Do we cut it after the header? (only if packet is elligible) */
-	if (cut_rate && RAND_PERCENT < cut_rate && len > MIN_PKT_PDATA_LEN &&  ((uint8_t) buf[0])>>6 == 1) {
+	if (cut_rate && RAND_PERCENT < cut_rate && len > MIN_PKT_LEN && ((uint8_t) buf[0])>>6 == 1) {
 		LOG_PKT(buf, "Truncating packet");
-		len = MIN_PKT_PDATA_LEN;
-		/* ... and don't forget to mark it as truncated */
-		buf[0] |= 0x20;
+		len = MIN_PKT_LEN;
+		/* Truncation indicated by absence of CRC2, no header bit to set */
 	/* or do we corrupt it? */
 	} else if (err_rate && RAND_PERCENT < err_rate) {
 		int idx = rand() % len;
